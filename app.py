@@ -3,11 +3,24 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-# Layout
-st.set_page_config(layout="wide")
+# Page setup
+st.set_page_config(page_title="Apex Fund", layout="wide")
 
-# Titel
-st.title("Apex Fund Performance")
+# Simple styling
+st.markdown("""
+<style>
+.big-font {font-size:28px !important; font-weight:600;}
+.metric-card {
+    background-color: #111;
+    padding: 15px;
+    border-radius: 10px;
+    color: white;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Title
+st.markdown('<p class="big-font">Apex Fund Performance</p>', unsafe_allow_html=True)
 
 # Fake data
 np.random.seed(42)
@@ -23,48 +36,50 @@ for site in sites:
 
 df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
 
-# Tilføj service type
+# Add services
 services = ["FCR", "aFRR", "mFRR"]
 df["Service"] = np.random.choice(services, size=len(df))
 
-# KPI’er
+# KPIs
 total_revenue = int(df["Revenue"].sum())
 today_revenue = int(df[df["Date"] == df["Date"].max()]["Revenue"].sum())
 avg_per_site = int(df.groupby("Site")["Revenue"].mean().mean())
 
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Total Revenue", f"{total_revenue:,.0f} DKK")
-col2.metric("Revenue Today", f"{today_revenue:,.0f} DKK")
-col3.metric("Avg Revenue per Site", f"{avg_per_site:,.0f} DKK")
+col1.markdown(f"<div class='metric-card'>Total Revenue<br><b>{total_revenue:,.0f} DKK</b></div>", unsafe_allow_html=True)
+col2.markdown(f"<div class='metric-card'>Revenue Today<br><b>{today_revenue:,.0f} DKK</b></div>", unsafe_allow_html=True)
+col3.markdown(f"<div class='metric-card'>Avg per Site<br><b>{avg_per_site:,.0f} DKK</b></div>", unsafe_allow_html=True)
 
-# Daily revenue
+# Daily chart
 daily = df.groupby("Date")["Revenue"].sum().reset_index()
 fig = px.line(daily, x="Date", y="Revenue", title="Daily Revenue")
+fig.update_layout(template="plotly_dark")
 st.plotly_chart(fig, use_container_width=True)
 
-# Revenue per site
-site_rev = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
-fig2 = px.bar(site_rev, x="Site", y="Revenue", title="Revenue per BESS Site")
-st.plotly_chart(fig2, use_container_width=True)
+# Two columns layout
+colA, colB = st.columns(2)
 
-# Revenue per service
-service_rev = df.groupby("Service")["Revenue"].sum().reset_index()
-fig3 = px.pie(service_rev, names="Service", values="Revenue", title="Revenue by Service Type")
-st.plotly_chart(fig3, use_container_width=True)
+with colA:
+    site_rev = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
+    fig2 = px.bar(site_rev, x="Site", y="Revenue", title="Revenue per Site")
+    fig2.update_layout(template="plotly_dark")
+    st.plotly_chart(fig2, use_container_width=True)
+
+with colB:
+    service_rev = df.groupby("Service")["Revenue"].sum().reset_index()
+    fig3 = px.pie(service_rev, names="Service", values="Revenue", title="Revenue by Service")
+    fig3.update_layout(template="plotly_dark")
+    st.plotly_chart(fig3, use_container_width=True)
 
 # Best site
 best_site = df.groupby("Site")["Revenue"].sum().idxmax()
-st.write(f"Best performing site: {best_site}")
 
-# Explanation
-st.subheader("Performance Insight")
-st.write(f"""
-Revenue performance is driven by volatility in ancillary service markets.
+st.markdown(f"### Best performing site: {best_site}")
 
-- FCR contributes during frequency instability  
-- aFRR and mFRR add upside during demand peaks  
-- Site differences are driven by availability and efficiency  
-
-Best performing asset: **{best_site}**
+# Insight
+st.markdown("### Performance Insight")
+st.write("""
+Revenue is driven by volatility in ancillary service markets.
+FCR dominates stable periods, while aFRR/mFRR increase during demand spikes.
 """)
