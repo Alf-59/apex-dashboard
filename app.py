@@ -3,24 +3,38 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-# Page setup
+# Page config
 st.set_page_config(page_title="Apex Fund", layout="wide")
 
-# Simple styling
+# DARK BACKGROUND + CLEAN STYLE
 st.markdown("""
 <style>
-.big-font {font-size:28px !important; font-weight:600;}
-.metric-card {
-    background-color: #111;
-    padding: 15px;
-    border-radius: 10px;
+body {
+    background-color: #0e1117;
     color: white;
+}
+.block-container {
+    padding-top: 2rem;
+}
+.metric-box {
+    background-color: #111827;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+}
+.metric-title {
+    font-size: 14px;
+    color: #9ca3af;
+}
+.metric-value {
+    font-size: 28px;
+    font-weight: 600;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # Title
-st.markdown('<p class="big-font">Apex Fund Performance</p>', unsafe_allow_html=True)
+st.markdown("## Apex Fund Performance")
 
 # Fake data
 np.random.seed(42)
@@ -36,7 +50,7 @@ for site in sites:
 
 df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
 
-# Add services
+# Services
 services = ["FCR", "aFRR", "mFRR"]
 df["Service"] = np.random.choice(services, size=len(df))
 
@@ -45,41 +59,66 @@ total_revenue = int(df["Revenue"].sum())
 today_revenue = int(df[df["Date"] == df["Date"].max()]["Revenue"].sum())
 avg_per_site = int(df.groupby("Site")["Revenue"].mean().mean())
 
+# KPI layout
 col1, col2, col3 = st.columns(3)
 
-col1.markdown(f"<div class='metric-card'>Total Revenue<br><b>{total_revenue:,.0f} DKK</b></div>", unsafe_allow_html=True)
-col2.markdown(f"<div class='metric-card'>Revenue Today<br><b>{today_revenue:,.0f} DKK</b></div>", unsafe_allow_html=True)
-col3.markdown(f"<div class='metric-card'>Avg per Site<br><b>{avg_per_site:,.0f} DKK</b></div>", unsafe_allow_html=True)
+col1.markdown(f"""
+<div class="metric-box">
+<div class="metric-title">Total Revenue</div>
+<div class="metric-value">{total_revenue:,.0f} DKK</div>
+</div>
+""", unsafe_allow_html=True)
+
+col2.markdown(f"""
+<div class="metric-box">
+<div class="metric-title">Revenue Today</div>
+<div class="metric-value">{today_revenue:,.0f} DKK</div>
+</div>
+""", unsafe_allow_html=True)
+
+col3.markdown(f"""
+<div class="metric-box">
+<div class="metric-title">Avg per Site</div>
+<div class="metric-value">{avg_per_site:,.0f} DKK</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("---")
 
 # Daily chart
 daily = df.groupby("Date")["Revenue"].sum().reset_index()
-fig = px.line(daily, x="Date", y="Revenue", title="Daily Revenue")
-fig.update_layout(template="plotly_dark")
+fig = px.line(daily, x="Date", y="Revenue")
+fig.update_layout(
+    template="plotly_dark",
+    title="Daily Revenue",
+    margin=dict(l=0, r=0, t=40, b=0)
+)
 st.plotly_chart(fig, use_container_width=True)
 
-# Two columns layout
+# Layout 2 columns
 colA, colB = st.columns(2)
 
 with colA:
     site_rev = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
-    fig2 = px.bar(site_rev, x="Site", y="Revenue", title="Revenue per Site")
-    fig2.update_layout(template="plotly_dark")
+    fig2 = px.bar(site_rev, x="Site", y="Revenue")
+    fig2.update_layout(template="plotly_dark", title="Revenue per Site")
     st.plotly_chart(fig2, use_container_width=True)
 
 with colB:
     service_rev = df.groupby("Service")["Revenue"].sum().reset_index()
-    fig3 = px.pie(service_rev, names="Service", values="Revenue", title="Revenue by Service")
-    fig3.update_layout(template="plotly_dark")
+    fig3 = px.pie(service_rev, names="Service", values="Revenue")
+    fig3.update_layout(template="plotly_dark", title="Revenue by Service")
     st.plotly_chart(fig3, use_container_width=True)
 
 # Best site
 best_site = df.groupby("Site")["Revenue"].sum().idxmax()
 
-st.markdown(f"### Best performing site: {best_site}")
+st.markdown(f"### Best performing asset: **{best_site}**")
 
 # Insight
 st.markdown("### Performance Insight")
 st.write("""
-Revenue is driven by volatility in ancillary service markets.
-FCR dominates stable periods, while aFRR/mFRR increase during demand spikes.
+Revenue is primarily driven by volatility in ancillary services.
+
+FCR dominates stable periods, while aFRR and mFRR increase during demand spikes.
 """)
