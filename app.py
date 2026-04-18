@@ -21,6 +21,9 @@ for site in sites:
         data.append([dates[i], site, revenue[i]])
 
 df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
+23 df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
+services = ["FCR", "aFRR", "mFRR"]
+df["Service"] = np.random.choice(services, size=len(df))
 
 # KPIs
 total_revenue = int(df["Revenue"].sum())
@@ -38,7 +41,14 @@ fig = px.line(daily, x="Date", y="Revenue", title="Daily Revenue")
 st.plotly_chart(fig, use_container_width=True)
 
 # Revenue per site
+st.plotly_chart(fig2, use_container_width=True)
 site_rev = df.groupby("Site")["Revenue"].sum().reset_index()
+service_rev = df.groupby("Service")["Revenue"].sum().reset_index()
+st.write("Revenue variations are driven by market volatility in ancillary services and site availability.")
+fig3 = px.pie(service_rev, names="Service", values="Revenue", title="Revenue by Service Type")
+st.plotly_chart(fig3, use_container_width=True)
+best_site = df.groupby("Site")["Revenue"].sum().idxmax()
+st.write(f"Best performing site: {best_site}")
 fig2 = px.bar(site_rev, x="Site", y="Revenue", title="Revenue per BESS Site")
 st.plotly_chart(fig2, use_container_width=True)
 
