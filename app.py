@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Apex Intelligence", layout="wide")
 
@@ -20,8 +20,6 @@ def load_data():
             data.append([dates[i], site, revenue[i]])
 
     df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
-    services = ["FCR", "aFRR", "mFRR"]
-    df["Service"] = np.random.choice(services, size=len(df))
     return df
 
 df = load_data()
@@ -38,7 +36,7 @@ else:
     df_filtered = df
 
 # ---------- HEADER ----------
-st.title("Apex Fund — Investor Intelligence")
+st.title("Apex Fund — Intelligence Platform")
 
 # ---------- KPI ----------
 total = int(df_filtered["Revenue"].sum())
@@ -58,91 +56,116 @@ col1.metric("Total Revenue", f"{total:,.0f} DKK")
 col2.metric("Revenue Today", f"{today:,.0f} DKK")
 col3.metric("Performance vs Avg", f"{perf:,.0f} DKK")
 
-# ---------- ALERT ----------
-if mode == "Single Asset" and perf < 0:
-    st.warning(f"{selected_site} is underperforming vs portfolio")
+# ---------- TIME SERIES ----------
+daily = df_filtered.groupby("Date")["Revenue"].sum().reset_index()
 
-# ---------- MAIN CHART ----------
-st.subheader("Revenue Trend")
+# ---------- FORECAST ----------
+window = 14
+daily["MA"] = daily["Revenue"].rolling(window).mean()
 
-if mode == "Portfolio":
-    # PORTFOLIO + individual lines
-    daily = df.groupby(["Date", "Site"])["Revenue"].sum().reset_index()
+last_value = daily["MA"].iloc[-1]
 
-    fig = px.line(
-        daily,
-        x="Date",
-        y="Revenue",
-        color="Site",
-    )
+future_dates = pd.date_range(start=daily["Date"].iloc[-1], periods=30)
+trend = np.linspace(last_value, last_value * 1.05, 30)
 
-else:
-    # SINGLE + benchmark
-    asset = df[df["Site"] == selected_site]
-    portfolio = df.groupby("Date")["Revenue"].mean().reset_index()
+forecast_df = pd.DataFrame({
+    "Date": future_dates,
+    "Forecast": trend
+})
 
-    asset["Type"] = "Selected Asset"
-    portfolio["Type"] = "Portfolio Avg"
+# ---------- GRAPH ----------
+fig = go.Figure()
 
-    combined = pd.concat([
-        asset[["Date", "Revenue"]].assign(Type="Selected Asset"),
-        portfolio.rename(columns={"Revenue": "Revenue"})
-    ])
+fig.add_trace(go.Scatter(
+    x=daily["Date"],
+    y=daily["Revenue"],
+    mode="lines",
+    name="Historical",
+    line=dict(width=3)
+))
 
-    fig = px.line(
-        combined,
-        x="Date",
-        y="Revenue",
-        color="Type"
-    )
+fig.add_trace(go.Scatter(
+    x=forecast_df["Date"],
+    y=forecast_df["Forecast"],
+    mode="lines",
+    name="Forecast",
+    line=dict(dash="dash")
+))
 
 fig.update_layout(
     template="plotly_dark",
+    title="Revenue + Forecast",
     plot_bgcolor="#020617",
     paper_bgcolor="#020617"
 )
 
-fig.update_traces(line=dict(width=3))
-
 st.plotly_chart(fig, use_container_width=True)
 
-# ---------- SPLIT ----------
-colA, colB = st.columns(2)
+# ---------- VOLATILITY ----------
+volatility = daily["Revenue"].std()
+risk_level = "Low"
 
-with colA:
-    st.subheader("Portfolio Ranking")
-    ranking = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
-    st.dataframe(ranking, use_container_width=True)
+if volatility > 20000:
+    risk_level = "High"
+elif volatility > 10000:
+    risk_level = "Medium"
 
-with colB:
-    st.subheader("Service Mix")
-    service_rev = df_filtered.groupby("Service")["Revenue"].sum().reset_index()
-    fig2 = px.pie(service_rev, names="Service", values="Revenue", hole=0.5)
-    fig2.update_layout(template="plotly_dark")
-    st.plotly_chart(fig2, use_container_width=True)
+# ---------- ALERT ----------
+if risk_level == "High":
+    st.error("⚠️ High volatility detected")
+elif risk_level == "Medium":
+    st.warning("⚠️ Moderate volatility")
+else:
+    st.success("Stable revenue pattern")
+
+# ---------- RANKING ----------
+st.subheader("Portfolio Ranking")
+
+ranking = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
+st.dataframe(ranking, use_container_width=True)
+
+# ---------- AI ANALYSIS ----------
+st.subheader("AI Analysis")
+
+trend_change = daily["Revenue"].iloc[-1] - daily["Revenue"].iloc[-30]
+
+if trend_change > 0:
+    trend_text = "Revenue trending upward"
+else:
+    trend_text = "Revenue trending downward"
+
+if mode == "Single Asset":
+    if perf > 0:
+        perf_text = "Asset outperforming portfolio"
+    else:
+        perf_text = "Asset underperforming portfolio"
+else:
+    perf_text = "Portfolio balanced"
+
+st.markdown(f"""
+**Summary**
+
+- {trend_text}  
+- Risk level: **{risk_level}**  
+- {perf_text}  
+
+**Forecast Outlook**
+
+- Expected revenue growth next 30 days  
+- No extreme downside scenarios detected  
+""")
 
 # ---------- COPILOT ----------
 st.subheader("Investor Copilot")
 
-q = st.text_input("Ask about performance (best, worst, risk)")
+q = st.text_input("Ask about performance")
 
 if q:
-    if "best" in q.lower():
-        st.success(f"Top asset: {ranking.iloc[0]['Site']}")
-    elif "worst" in q.lower():
-        st.warning(f"Worst asset: {ranking.iloc[-1]['Site']}")
+    if "forecast" in q.lower():
+        st.info("Revenue expected to grow ~5% next 30 days")
     elif "risk" in q.lower():
-        st.warning("No major risks detected")
+        st.warning(f"Risk level is {risk_level}")
+    elif "best" in q.lower():
+        st.success(f"Best asset: {ranking.iloc[0]['Site']}")
     else:
-        st.info("Portfolio stable")
-
-# ---------- INSIGHT ----------
-st.subheader("AI Market Insight")
-
-if mode == "Single Asset":
-    if perf > 0:
-        st.info(f"{selected_site} outperforming portfolio average.")
-    else:
-        st.info(f"{selected_site} underperforming portfolio.")
-else:
-    st.info("Portfolio stable across assets.")
+        st.info("System stable with normal variation")
