@@ -5,34 +5,6 @@ import plotly.express as px
 
 st.set_page_config(page_title="Apex Intelligence", layout="wide")
 
-# ---------- SESSION ----------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-# ---------- LOGIN ----------
-if not st.session_state.logged_in:
-    st.title("🔐 Apex Intelligence Login")
-
-    user = st.text_input("Username")
-    pwd = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if user == "admin" and pwd == "1234":
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("Wrong credentials")
-
-    st.stop()
-
-# ---------- STYLE ----------
-st.markdown("""
-<style>
-body { background-color: #05070d; }
-.kpi { background:#020617;padding:15px;border-radius:10px }
-</style>
-""", unsafe_allow_html=True)
-
 # ---------- DATA ----------
 @st.cache_data
 def load_data():
@@ -57,10 +29,10 @@ df = load_data()
 # ---------- SIDEBAR ----------
 st.sidebar.title("Control Panel")
 
-mode = st.sidebar.radio("Mode", ["Portfolio", "Single Asset"])
+mode = st.sidebar.radio("View Mode", ["Portfolio", "Single Asset"])
 
 if mode == "Single Asset":
-    selected_site = st.sidebar.selectbox("Select Asset", df["Site"].unique())
+    selected_site = st.sidebar.selectbox("Select BESS", df["Site"].unique())
     df_filtered = df[df["Site"] == selected_site]
 else:
     df_filtered = df
@@ -73,10 +45,10 @@ total = int(df_filtered["Revenue"].sum())
 today = int(df_filtered[df_filtered["Date"] == df_filtered["Date"].max()]["Revenue"].sum())
 
 site_perf = df.groupby("Site")["Revenue"].sum()
-avg = site_perf.mean()
+avg_perf = site_perf.mean()
 
 if mode == "Single Asset":
-    perf = site_perf[selected_site] - avg
+    perf = site_perf[selected_site] - avg_perf
 else:
     perf = 0
 
@@ -88,31 +60,89 @@ col3.metric("Performance vs Avg", f"{perf:,.0f} DKK")
 
 # ---------- ALERT ----------
 if mode == "Single Asset" and perf < 0:
-    st.warning(f"{selected_site} underperforming")
+    st.warning(f"{selected_site} is underperforming vs portfolio")
 
-# ---------- CHART ----------
-daily = df_filtered.groupby("Date")["Revenue"].sum().reset_index()
-fig = px.line(daily, x="Date", y="Revenue", template="plotly_dark")
+# ---------- MAIN CHART ----------
+st.subheader("Revenue Trend")
+
+if mode == "Portfolio":
+    # PORTFOLIO + individual lines
+    daily = df.groupby(["Date", "Site"])["Revenue"].sum().reset_index()
+
+    fig = px.line(
+        daily,
+        x="Date",
+        y="Revenue",
+        color="Site",
+    )
+
+else:
+    # SINGLE + benchmark
+    asset = df[df["Site"] == selected_site]
+    portfolio = df.groupby("Date")["Revenue"].mean().reset_index()
+
+    asset["Type"] = "Selected Asset"
+    portfolio["Type"] = "Portfolio Avg"
+
+    combined = pd.concat([
+        asset[["Date", "Revenue"]].assign(Type="Selected Asset"),
+        portfolio.rename(columns={"Revenue": "Revenue"})
+    ])
+
+    fig = px.line(
+        combined,
+        x="Date",
+        y="Revenue",
+        color="Type"
+    )
+
+fig.update_layout(
+    template="plotly_dark",
+    plot_bgcolor="#020617",
+    paper_bgcolor="#020617"
+)
+
+fig.update_traces(line=dict(width=3))
+
 st.plotly_chart(fig, use_container_width=True)
 
-# ---------- RANK ----------
-ranking = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
-st.dataframe(ranking)
+# ---------- SPLIT ----------
+colA, colB = st.columns(2)
 
-# ---------- AI COPILOT ----------
+with colA:
+    st.subheader("Portfolio Ranking")
+    ranking = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
+    st.dataframe(ranking, use_container_width=True)
+
+with colB:
+    st.subheader("Service Mix")
+    service_rev = df_filtered.groupby("Service")["Revenue"].sum().reset_index()
+    fig2 = px.pie(service_rev, names="Service", values="Revenue", hole=0.5)
+    fig2.update_layout(template="plotly_dark")
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ---------- COPILOT ----------
 st.subheader("Investor Copilot")
 
-q = st.text_input("Ask a question...")
+q = st.text_input("Ask about performance (best, worst, risk)")
 
 if q:
-    if "best" in q:
-        st.success(f"Best asset: {ranking.iloc[0]['Site']}")
-    elif "risk" in q:
+    if "best" in q.lower():
+        st.success(f"Top asset: {ranking.iloc[0]['Site']}")
+    elif "worst" in q.lower():
+        st.warning(f"Worst asset: {ranking.iloc[-1]['Site']}")
+    elif "risk" in q.lower():
         st.warning("No major risks detected")
     else:
         st.info("Portfolio stable")
 
-# ---------- LOGOUT ----------
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.rerun()
+# ---------- INSIGHT ----------
+st.subheader("AI Market Insight")
+
+if mode == "Single Asset":
+    if perf > 0:
+        st.info(f"{selected_site} outperforming portfolio average.")
+    else:
+        st.info(f"{selected_site} underperforming portfolio.")
+else:
+    st.info("Portfolio stable across assets.")
