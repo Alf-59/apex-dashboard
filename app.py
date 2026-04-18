@@ -2,75 +2,78 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import requests
+from openai import OpenAI
 
-st.set_page_config(page_title="Apex Intelligence", layout="wide")
+st.set_page_config(page_title="Apex Intelligence", layout="centered")
 
-# ---------- DATA ----------
-@st.cache_data
-def load_data():
-    np.random.seed(42)
-    dates = pd.date_range(start="2025-01-01", periods=180)
-    sites = [f"BESS_{i}" for i in range(1, 11)]
+# ---------- OPENAI ----------
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-    data = []
-    for site in sites:
-        revenue = np.random.normal(50000, 15000, len(dates))
-        revenue = np.maximum(revenue, 0)
-        for i in range(len(dates)):
-            data.append([dates[i], site, revenue[i]])
+# ---------- LIVE DATA (SIMPEL VERSION) ----------
+def load_live_data():
+    try:
+        # HER kan du senere indsætte Soft Control API
+        # fx requests.get(...)
+        
+        # fallback demo
+        np.random.seed(42)
+        dates = pd.date_range(start="2025-01-01", periods=180)
+        sites = [f"BESS_{i}" for i in range(1, 11)]
 
-    df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
-    return df
+        data = []
+        for site in sites:
+            revenue = np.random.normal(50000, 15000, len(dates))
+            revenue = np.maximum(revenue, 0)
+            for i in range(len(dates)):
+                data.append([dates[i], site, revenue[i]])
 
-df = load_data()
+        df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
+        return df
 
-# ---------- SIDEBAR ----------
-st.sidebar.title("Control Panel")
+    except:
+        st.error("Data load failed")
+        return pd.DataFrame()
 
-mode = st.sidebar.radio("View Mode", ["Portfolio", "Single Asset"])
+df = load_live_data()
+
+# ---------- UI ----------
+st.title("Apex Intelligence")
+
+mode = st.radio("View", ["Portfolio", "Single Asset"])
 
 if mode == "Single Asset":
-    selected_site = st.sidebar.selectbox("Select BESS", df["Site"].unique())
+    selected_site = st.selectbox("Choose BESS", df["Site"].unique())
     df_filtered = df[df["Site"] == selected_site]
 else:
     df_filtered = df
-
-# ---------- HEADER ----------
-st.title("Apex Fund — Intelligence Platform")
 
 # ---------- KPI ----------
 total = int(df_filtered["Revenue"].sum())
 today = int(df_filtered[df_filtered["Date"] == df_filtered["Date"].max()]["Revenue"].sum())
 
-site_perf = df.groupby("Site")["Revenue"].sum()
-avg_perf = site_perf.mean()
-
-if mode == "Single Asset":
-    perf = site_perf[selected_site] - avg_perf
-else:
-    perf = 0
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Total Revenue", f"{total:,.0f} DKK")
-col2.metric("Revenue Today", f"{today:,.0f} DKK")
-col3.metric("Performance vs Avg", f"{perf:,.0f} DKK")
+st.metric("Total Revenue", f"{total:,.0f} DKK")
+st.metric("Revenue Today", f"{today:,.0f} DKK")
 
 # ---------- TIME SERIES ----------
 daily = df_filtered.groupby("Date")["Revenue"].sum().reset_index()
 
 # ---------- FORECAST ----------
-window = 14
-daily["MA"] = daily["Revenue"].rolling(window).mean()
+daily["t"] = np.arange(len(daily))
+X = daily[["t"]].values
+y = daily["Revenue"].values
 
-last_value = daily["MA"].iloc[-1]
+coef = np.linalg.lstsq(X, y, rcond=None)[0]
 
-future_dates = pd.date_range(start=daily["Date"].iloc[-1], periods=30)
-trend = np.linspace(last_value, last_value * 1.05, 30)
+future_days = 30
+future_t = np.arange(len(daily), len(daily) + future_days)
+
+future_dates = pd.date_range(start=daily["Date"].iloc[-1], periods=future_days)
+forecast = future_t * coef[0]
 
 forecast_df = pd.DataFrame({
     "Date": future_dates,
-    "Forecast": trend
+    "Forecast": forecast
 })
 
 # ---------- GRAPH ----------
@@ -80,8 +83,7 @@ fig.add_trace(go.Scatter(
     x=daily["Date"],
     y=daily["Revenue"],
     mode="lines",
-    name="Historical",
-    line=dict(width=3)
+    name="Actual"
 ))
 
 fig.add_trace(go.Scatter(
@@ -92,80 +94,43 @@ fig.add_trace(go.Scatter(
     line=dict(dash="dash")
 ))
 
-fig.update_layout(
-    template="plotly_dark",
-    title="Revenue + Forecast",
-    plot_bgcolor="#020617",
-    paper_bgcolor="#020617"
-)
+fig.update_layout(template="plotly_dark", height=400)
 
 st.plotly_chart(fig, use_container_width=True)
-
-# ---------- VOLATILITY ----------
-volatility = daily["Revenue"].std()
-risk_level = "Low"
-
-if volatility > 20000:
-    risk_level = "High"
-elif volatility > 10000:
-    risk_level = "Medium"
-
-# ---------- ALERT ----------
-if risk_level == "High":
-    st.error("⚠️ High volatility detected")
-elif risk_level == "Medium":
-    st.warning("⚠️ Moderate volatility")
-else:
-    st.success("Stable revenue pattern")
-
-# ---------- RANKING ----------
-st.subheader("Portfolio Ranking")
-
-ranking = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
-st.dataframe(ranking, use_container_width=True)
 
 # ---------- AI ANALYSIS ----------
 st.subheader("AI Analysis")
 
-trend_change = daily["Revenue"].iloc[-1] - daily["Revenue"].iloc[-30]
+data_summary = f"""
+Total revenue: {total}
+Today revenue: {today}
+Last 30 day trend: {daily['Revenue'].iloc[-1] - daily['Revenue'].iloc[-30]}
+"""
 
-if trend_change > 0:
-    trend_text = "Revenue trending upward"
-else:
-    trend_text = "Revenue trending downward"
+if st.button("Generate AI Analysis"):
 
-if mode == "Single Asset":
-    if perf > 0:
-        perf_text = "Asset outperforming portfolio"
-    else:
-        perf_text = "Asset underperforming portfolio"
-else:
-    perf_text = "Portfolio balanced"
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an energy market analyst."},
+            {"role": "user", "content": f"Analyze this BESS portfolio:\n{data_summary}"}
+        ]
+    )
 
-st.markdown(f"""
-**Summary**
-
-- {trend_text}  
-- Risk level: **{risk_level}**  
-- {perf_text}  
-
-**Forecast Outlook**
-
-- Expected revenue growth next 30 days  
-- No extreme downside scenarios detected  
-""")
+    st.write(response.choices[0].message.content)
 
 # ---------- COPILOT ----------
 st.subheader("Investor Copilot")
 
-q = st.text_input("Ask about performance")
+q = st.text_input("Ask anything about the portfolio")
 
 if q:
-    if "forecast" in q.lower():
-        st.info("Revenue expected to grow ~5% next 30 days")
-    elif "risk" in q.lower():
-        st.warning(f"Risk level is {risk_level}")
-    elif "best" in q.lower():
-        st.success(f"Best asset: {ranking.iloc[0]['Site']}")
-    else:
-        st.info("System stable with normal variation")
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an expert in BESS and energy markets."},
+            {"role": "user", "content": q}
+        ]
+    )
+
+    st.write(response.choices[0].message.content)
