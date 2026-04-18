@@ -1,72 +1,63 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
-st.set_page_config(page_title="Apex Intelligence", layout="centered")
+st.set_page_config(page_title="Apex Intelligence", layout="wide")
 
-# ===== STYLE =====
+# ---------- STYLE ----------
 st.markdown("""
 <style>
 body {
-    background-color: #0b0f19;
-    color: #e5e7eb;
+    background-color: #05070d;
 }
 
-.block-container {
-    padding-top: 3rem;
-    max-width: 800px;
+.big-title {
+    font-size: 40px;
+    font-weight: 700;
+    margin-bottom: 10px;
 }
 
-/* Title */
-.title {
-    font-size: 34px;
-    font-weight: 600;
-    margin-bottom: 30px;
+.kpi-card {
+    background: linear-gradient(135deg, #0f172a, #020617);
+    padding: 20px;
+    border-radius: 12px;
 }
 
-/* Cards */
-.card {
-    background: #111827;
-    padding: 24px;
-    border-radius: 14px;
-    margin-bottom: 20px;
-}
-
-/* KPI */
 .kpi-label {
-    font-size: 12px;
-    color: #9ca3af;
+    color: #94a3b8;
+    font-size: 13px;
 }
 
 .kpi-value {
-    font-size: 28px;
-    font-weight: 600;
-    margin-top: 4px;
+    font-size: 26px;
+    font-weight: 700;
 }
 
-/* Section titles */
-.section {
-    margin-top: 30px;
-    margin-bottom: 10px;
+.green { color: #22c55e; }
+.red { color: #ef4444; }
+.blue { color: #38bdf8; }
+
+.section-title {
     font-size: 16px;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    color: #64748b;
+    margin-top: 40px;
+    margin-bottom: 10px;
 }
 
-/* Divider */
-.divider {
-    height: 1px;
-    background: #1f2937;
-    margin: 30px 0;
+.insight-box {
+    background: #020617;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #1e293b;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ===== TITLE =====
-st.markdown('<div class="title">Apex Fund — Investor Intelligence</div>', unsafe_allow_html=True)
+# ---------- TITLE ----------
+st.markdown('<div class="big-title">Apex Fund — Investor Intelligence</div>', unsafe_allow_html=True)
 
-# ===== DATA =====
+# ---------- DATA ----------
 np.random.seed(42)
 dates = pd.date_range(start="2025-01-01", periods=180)
 sites = [f"BESS_{i}" for i in range(1, 11)]
@@ -80,60 +71,86 @@ for site in sites:
 
 df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
 
-# KPI
+services = ["FCR", "aFRR", "mFRR"]
+df["Service"] = np.random.choice(services, size=len(df))
+
+# ---------- KPI ----------
 total = int(df["Revenue"].sum())
 today = int(df[df["Date"] == df["Date"].max()]["Revenue"].sum())
-best_site = df.groupby("Site")["Revenue"].sum().idxmax()
-
-# ===== KPI CARD =====
-st.markdown('<div class="card">', unsafe_allow_html=True)
+best = df.groupby("Site")["Revenue"].sum().idxmax()
 
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.markdown(f"<div class='kpi-label'>Total Revenue</div><div class='kpi-value'>{total:,.0f} DKK</div>", unsafe_allow_html=True)
+col1.markdown(f"""
+<div class="kpi-card">
+<div class="kpi-label">Total Revenue</div>
+<div class="kpi-value">{total:,.0f} DKK</div>
+<div class="green">▲ +4.2%</div>
+</div>
+""", unsafe_allow_html=True)
 
-with col2:
-    st.markdown(f"<div class='kpi-label'>Revenue Today</div><div class='kpi-value'>{today:,.0f} DKK</div>", unsafe_allow_html=True)
+col2.markdown(f"""
+<div class="kpi-card">
+<div class="kpi-label">Revenue Today</div>
+<div class="kpi-value">{today:,.0f} DKK</div>
+<div class="green">▲ Strong day</div>
+</div>
+""", unsafe_allow_html=True)
 
-with col3:
-    st.markdown(f"<div class='kpi-label'>Top Asset</div><div class='kpi-value'>{best_site}</div>", unsafe_allow_html=True)
+col3.markdown(f"""
+<div class="kpi-card">
+<div class="kpi-label">Top Asset</div>
+<div class="kpi-value">{best}</div>
+<div class="blue">Stable</div>
+</div>
+""", unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+# ---------- LAYOUT SPLIT ----------
+left, right = st.columns([2, 1])
 
-# ===== INTELLIGENCE =====
-st.markdown('<div class="section">Market Intelligence</div>', unsafe_allow_html=True)
+# ---------- LEFT SIDE ----------
+with left:
+    st.markdown('<div class="section-title">Revenue Trend</div>', unsafe_allow_html=True)
+    
+    daily = df.groupby("Date")["Revenue"].sum().reset_index()
+    fig = px.line(daily, x="Date", y="Revenue")
+    fig.update_traces(line=dict(width=3))
+    fig.update_layout(
+        template="plotly_dark",
+        plot_bgcolor="#020617",
+        paper_bgcolor="#020617",
+        margin=dict(l=0, r=0, t=0, b=0)
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-st.markdown('<div class="card">', unsafe_allow_html=True)
+# ---------- RIGHT SIDE ----------
+with right:
+    st.markdown('<div class="section-title">Service Mix</div>', unsafe_allow_html=True)
+
+    service_rev = df.groupby("Service")["Revenue"].sum().reset_index()
+    fig2 = px.pie(service_rev, names="Service", values="Revenue", hole=0.5)
+    fig2.update_layout(
+        template="plotly_dark",
+        plot_bgcolor="#020617",
+        paper_bgcolor="#020617"
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ---------- TABLE ----------
+st.markdown('<div class="section-title">Portfolio Ranking</div>', unsafe_allow_html=True)
+
+ranking = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
+st.dataframe(ranking, use_container_width=True)
+
+# ---------- INSIGHT ----------
+st.markdown('<div class="section-title">Market Intelligence</div>', unsafe_allow_html=True)
 
 st.markdown("""
-**Current performance is stable across the portfolio.**
+<div class="insight-box">
+<b>Portfolio Status:</b> Stable<br><br>
 
-Revenue is primarily driven by ancillary service volatility:
-
-- FCR dominates during stable grid conditions  
-- aFRR / mFRR increase during imbalance periods  
-- Asset performance is evenly distributed  
-
-**No immediate risk signals detected.**
-""")
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ===== PORTFOLIO =====
-st.markdown('<div class="section">Portfolio Ranking</div>', unsafe_allow_html=True)
-
-site_table = df.groupby("Site")["Revenue"].sum().sort_values(ascending=False).reset_index()
-
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.dataframe(site_table, use_container_width=True)
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ===== TREND =====
-st.markdown('<div class="section">Revenue Trend</div>', unsafe_allow_html=True)
-
-daily = df.groupby("Date")["Revenue"].sum().reset_index()
-
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.line_chart(daily.set_index("Date"))
-st.markdown('</div>', unsafe_allow_html=True)
+• FCR dominates stable grid conditions<br>
+• aFRR / mFRR spike during imbalance<br>
+• No immediate risk signals detected<br>
+</div>
+""", unsafe_allow_html=True)
