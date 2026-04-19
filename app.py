@@ -1,166 +1,210 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-from prophet import Prophet
+import plotly.graph_objects as go
 from openai import OpenAI
-import os
-from dotenv import load_dotenv
-from datetime import datetime
+
+st.set_page_config(page_title="Apex Intelligence", layout="centered")
 
 # -------------------------
-# LOAD ENV
-# -------------------------
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# -------------------------
-# CONFIG
-# -------------------------
-st.set_page_config(
-    page_title="Apex Intelligence",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# -------------------------
-# CUSTOM CSS (Modern UI)
+# 🎨 DESIGN (PRO LEVEL)
 # -------------------------
 st.markdown("""
 <style>
 body {
-    background-color: #0e1117;
+    background-color: #050a16;
+    color: white;
 }
-.metric-card {
-    background: #1c1f26;
+
+.block-container {
+    max-width: 900px;
+    margin: auto;
+}
+
+/* KPI cards */
+.kpi {
+    background: linear-gradient(145deg, #0b1c35, #071427);
     padding: 20px;
-    border-radius: 12px;
+    border-radius: 14px;
+    border: 1px solid #1f3b73;
+    box-shadow: 0 0 20px rgba(0,100,255,0.08);
+    margin-bottom: 10px;
+}
+
+.kpi-title {
+    color: #9bb3ff;
+    font-size: 13px;
+}
+
+.kpi-value {
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.kpi-positive {
+    color: #00ffa3;
+}
+
+.kpi-negative {
+    color: #ff4d6d;
+}
+
+/* Section titles */
+.section {
+    font-size: 14px;
+    color: #6b85c5;
+    margin-top: 40px;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+}
+
+/* Input styling */
+.stTextInput input {
+    background-color: #0b1c35;
+    border: 1px solid #1f3b73;
+    color: white;
+}
+
+/* Button */
+.stButton button {
+    background: linear-gradient(90deg, #3b82f6, #6366f1);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-weight: 600;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # -------------------------
-# SIDEBAR
+# DATA
 # -------------------------
-st.sidebar.title("⚙️ Apex Intelligence")
-mode = st.sidebar.radio("Mode", ["Dashboard", "Forecast", "AI Insights"])
+np.random.seed(42)
+dates = pd.date_range(start="2025-01-01", periods=180)
+sites = [f"BESS_{i}" for i in range(1, 11)]
 
-uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+data = []
+for site in sites:
+    revenue = np.random.normal(500000, 50000, len(dates))
+    revenue = np.maximum(revenue, 0)
+    for i in range(len(dates)):
+        data.append([dates[i], site, revenue[i]])
 
-# -------------------------
-# DATA LOADING
-# -------------------------
-@st.cache_data
-def load_data(file):
-    df = pd.read_csv(file)
-    df.columns = df.columns.str.lower()
-    return df
+df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
 
-if uploaded_file:
-    df = load_data(uploaded_file)
-else:
-    st.warning("Upload a dataset to begin")
-    st.stop()
+services = ["FCR", "aFRR", "mFRR"]
+df["Service"] = np.random.choice(services, size=len(df))
 
 # -------------------------
-# DASHBOARD
+# FILTER
 # -------------------------
-if mode == "Dashboard":
-    st.title("📊 Apex Dashboard")
+view = st.radio("View", ["Portfolio", "Single Asset"])
 
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Rows", len(df))
-    with col2:
-        st.metric("Columns", len(df.columns))
-    with col3:
-        st.metric("Missing Values", df.isna().sum().sum())
-
-    st.subheader("Data Preview")
-    st.dataframe(df.head())
-
-    # Auto detect numeric
-    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-
-    if numeric_cols:
-        selected_col = st.selectbox("Select Metric", numeric_cols)
-
-        fig = px.line(df, y=selected_col, title=f"{selected_col} Trend")
-        st.plotly_chart(fig, use_container_width=True)
-
-        fig2 = px.histogram(df, x=selected_col, nbins=30)
-        st.plotly_chart(fig2, use_container_width=True)
+if view == "Single Asset":
+    selected = st.selectbox("Select BESS", sites)
+    df = df[df["Site"] == selected]
 
 # -------------------------
-# FORECAST (Prophet)
+# KPI
 # -------------------------
-elif mode == "Forecast":
-    st.title("📈 Forecast Engine")
+total = int(df["Revenue"].sum())
+today = int(df[df["Date"] == df["Date"].max()]["Revenue"].sum())
 
-    date_col = st.selectbox("Select Date Column", df.columns)
-    target_col = st.selectbox("Select Target Column", df.select_dtypes(include=np.number).columns)
+delta = np.random.uniform(-5, 5)
 
-    df_forecast = df[[date_col, target_col]].dropna()
-    df_forecast.columns = ["ds", "y"]
+col1, col2 = st.columns(2)
 
-    df_forecast["ds"] = pd.to_datetime(df_forecast["ds"])
+col1.markdown(f"""
+<div class="kpi">
+<div class="kpi-title">Total Revenue</div>
+<div class="kpi-value">{total:,.0f} DKK</div>
+</div>
+""", unsafe_allow_html=True)
 
-    model = Prophet()
-    model.fit(df_forecast)
-
-    future = model.make_future_dataframe(periods=30)
-    forecast = model.predict(future)
-
-    st.subheader("Forecast Plot")
-    fig1 = px.line(forecast, x="ds", y="yhat")
-    st.plotly_chart(fig1, use_container_width=True)
-
-    st.subheader("Components")
-    fig2 = model.plot_components(forecast)
-    st.pyplot(fig2)
+col2.markdown(f"""
+<div class="kpi">
+<div class="kpi-title">Revenue Today</div>
+<div class="kpi-value">{today:,.0f} DKK</div>
+<div class="{ 'kpi-positive' if delta>0 else 'kpi-negative'}">
+{delta:.2f}%
+</div>
+</div>
+""", unsafe_allow_html=True)
 
 # -------------------------
-# AI INSIGHTS
+# 📈 CHART (TRADING STYLE)
 # -------------------------
-elif mode == "AI Insights":
-    st.title("🤖 AI Intelligence Engine")
+daily = df.groupby("Date")["Revenue"].sum().reset_index()
 
-    sample_data = df.head(50).to_csv(index=False)
+future_dates = pd.date_range(daily["Date"].max(), periods=20)
+forecast = np.linspace(daily["Revenue"].iloc[-1], daily["Revenue"].iloc[-1]*1.2, 20)
 
-    prompt = st.text_area(
-        "Ask AI about your data",
-        "Analyze trends, anomalies and business insights."
+fig = go.Figure()
+
+fig.add_trace(go.Scatter(
+    x=daily["Date"],
+    y=daily["Revenue"],
+    mode="lines",
+    name="Actual",
+    line=dict(color="#4c6fff", width=3)
+))
+
+fig.add_trace(go.Scatter(
+    x=future_dates,
+    y=forecast,
+    mode="lines",
+    name="Forecast",
+    line=dict(color="#ff4d6d", width=3, dash="dot")
+))
+
+fig.update_layout(
+    plot_bgcolor="#050a16",
+    paper_bgcolor="#050a16",
+    font=dict(color="white"),
+    margin=dict(l=0, r=0, t=10, b=0),
+    height=300
+)
+
+st.markdown('<div class="section">REVENUE TREND</div>', unsafe_allow_html=True)
+st.plotly_chart(fig, use_container_width=True)
+
+# -------------------------
+# 🤖 AUTO AI INSIGHT
+# -------------------------
+st.markdown('<div class="section">AI INTELLIGENCE</div>', unsafe_allow_html=True)
+
+try:
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+    summary = f"""
+    Total revenue: {total}
+    Today revenue: {today}
+    Trend increasing slightly
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role":"user","content":f"Analyze this portfolio:\n{summary}"}]
     )
 
-    if st.button("Run AI Analysis"):
-        with st.spinner("Thinking..."):
+    st.markdown(response.choices[0].message.content)
 
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a senior data analyst AI. Provide insights, trends and anomalies."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"""
-                        Dataset sample:
-                        {sample_data}
-
-                        Question:
-                        {prompt}
-                        """
-                    }
-                ]
-            )
-
-            st.success("Analysis Complete")
-            st.write(response.choices[0].message.content)
+except:
+    st.info("AI requires API key")
 
 # -------------------------
-# FOOTER
+# 💬 CHAT
 # -------------------------
-st.markdown("---")
-st.caption("Apex Intelligence © 2026")
+st.markdown('<div class="section">INVESTOR COPILOT</div>', unsafe_allow_html=True)
+
+q = st.text_input("Ask about your portfolio")
+
+if q:
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role":"user","content":q}]
+        )
+        st.write(response.choices[0].message.content)
+    except:
+        st.warning("Add API key")
