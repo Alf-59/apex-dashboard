@@ -147,7 +147,6 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("<div class='section'>ASSET PERFORMANCE</div>", unsafe_allow_html=True)
-
     asset_perf = df.groupby("Site")["Revenue"].sum().reset_index()
 
     fig_bar = go.Figure(go.Bar(
@@ -167,7 +166,6 @@ with col1:
 
 with col2:
     st.markdown("<div class='section'>SERVICE MIX</div>", unsafe_allow_html=True)
-
     service_mix = df.groupby("Service")["Revenue"].sum().reset_index()
 
     fig_donut = go.Figure(go.Pie(
@@ -254,23 +252,3 @@ if q:
             st.write(res.choices[0].message.content)
     else:
         st.warning("API key required for chat")
-```
-
----
-
-## ✅ Denne version garanterer
-
-* ingen emojis
-* ingen “smarte” citationstegn
-* ingen `*` eller tekstlinjer der bryder Python
-* ren ASCII-safe kode
-* klar til direkte kørsel
-
----
-
-Hvis den her stadig fejler, så er det **ikke koden længere** — så er det enten:
-
-* dit miljø (missing packages)
-* eller hvordan du indsætter filen
-
-Men den her kode er syntaktisk korrekt.
