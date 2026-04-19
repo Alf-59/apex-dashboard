@@ -1,136 +1,166 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-import requests
+import plotly.express as px
+from prophet import Prophet
 from openai import OpenAI
+import os
+from dotenv import load_dotenv
+from datetime import datetime
 
-st.set_page_config(page_title="Apex Intelligence", layout="centered")
+# -------------------------
+# LOAD ENV
+# -------------------------
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ---------- OPENAI ----------
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# -------------------------
+# CONFIG
+# -------------------------
+st.set_page_config(
+    page_title="Apex Intelligence",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# ---------- LIVE DATA (SIMPEL VERSION) ----------
-def load_live_data():
-    try:
-        # HER kan du senere indsætte Soft Control API
-        # fx requests.get(...)
-        
-        # fallback demo
-        np.random.seed(42)
-        dates = pd.date_range(start="2025-01-01", periods=180)
-        sites = [f"BESS_{i}" for i in range(1, 11)]
+# -------------------------
+# CUSTOM CSS (Modern UI)
+# -------------------------
+st.markdown("""
+<style>
+body {
+    background-color: #0e1117;
+}
+.metric-card {
+    background: #1c1f26;
+    padding: 20px;
+    border-radius: 12px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-        data = []
-        for site in sites:
-            revenue = np.random.normal(50000, 15000, len(dates))
-            revenue = np.maximum(revenue, 0)
-            for i in range(len(dates)):
-                data.append([dates[i], site, revenue[i]])
+# -------------------------
+# SIDEBAR
+# -------------------------
+st.sidebar.title("⚙️ Apex Intelligence")
+mode = st.sidebar.radio("Mode", ["Dashboard", "Forecast", "AI Insights"])
 
-        df = pd.DataFrame(data, columns=["Date", "Site", "Revenue"])
-        return df
+uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
-    except:
-        st.error("Data load failed")
-        return pd.DataFrame()
+# -------------------------
+# DATA LOADING
+# -------------------------
+@st.cache_data
+def load_data(file):
+    df = pd.read_csv(file)
+    df.columns = df.columns.str.lower()
+    return df
 
-df = load_live_data()
-
-# ---------- UI ----------
-st.title("Apex Intelligence")
-
-mode = st.radio("View", ["Portfolio", "Single Asset"])
-
-if mode == "Single Asset":
-    selected_site = st.selectbox("Choose BESS", df["Site"].unique())
-    df_filtered = df[df["Site"] == selected_site]
+if uploaded_file:
+    df = load_data(uploaded_file)
 else:
-    df_filtered = df
+    st.warning("Upload a dataset to begin")
+    st.stop()
 
-# ---------- KPI ----------
-total = int(df_filtered["Revenue"].sum())
-today = int(df_filtered[df_filtered["Date"] == df_filtered["Date"].max()]["Revenue"].sum())
+# -------------------------
+# DASHBOARD
+# -------------------------
+if mode == "Dashboard":
+    st.title("📊 Apex Dashboard")
 
-st.metric("Total Revenue", f"{total:,.0f} DKK")
-st.metric("Revenue Today", f"{today:,.0f} DKK")
+    col1, col2, col3 = st.columns(3)
 
-# ---------- TIME SERIES ----------
-daily = df_filtered.groupby("Date")["Revenue"].sum().reset_index()
+    with col1:
+        st.metric("Rows", len(df))
+    with col2:
+        st.metric("Columns", len(df.columns))
+    with col3:
+        st.metric("Missing Values", df.isna().sum().sum())
 
-# ---------- FORECAST ----------
-daily["t"] = np.arange(len(daily))
-X = daily[["t"]].values
-y = daily["Revenue"].values
+    st.subheader("Data Preview")
+    st.dataframe(df.head())
 
-coef = np.linalg.lstsq(X, y, rcond=None)[0]
+    # Auto detect numeric
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
 
-future_days = 30
-future_t = np.arange(len(daily), len(daily) + future_days)
+    if numeric_cols:
+        selected_col = st.selectbox("Select Metric", numeric_cols)
 
-future_dates = pd.date_range(start=daily["Date"].iloc[-1], periods=future_days)
-forecast = future_t * coef[0]
+        fig = px.line(df, y=selected_col, title=f"{selected_col} Trend")
+        st.plotly_chart(fig, use_container_width=True)
 
-forecast_df = pd.DataFrame({
-    "Date": future_dates,
-    "Forecast": forecast
-})
+        fig2 = px.histogram(df, x=selected_col, nbins=30)
+        st.plotly_chart(fig2, use_container_width=True)
 
-# ---------- GRAPH ----------
-fig = go.Figure()
+# -------------------------
+# FORECAST (Prophet)
+# -------------------------
+elif mode == "Forecast":
+    st.title("📈 Forecast Engine")
 
-fig.add_trace(go.Scatter(
-    x=daily["Date"],
-    y=daily["Revenue"],
-    mode="lines",
-    name="Actual"
-))
+    date_col = st.selectbox("Select Date Column", df.columns)
+    target_col = st.selectbox("Select Target Column", df.select_dtypes(include=np.number).columns)
 
-fig.add_trace(go.Scatter(
-    x=forecast_df["Date"],
-    y=forecast_df["Forecast"],
-    mode="lines",
-    name="Forecast",
-    line=dict(dash="dash")
-))
+    df_forecast = df[[date_col, target_col]].dropna()
+    df_forecast.columns = ["ds", "y"]
 
-fig.update_layout(template="plotly_dark", height=400)
+    df_forecast["ds"] = pd.to_datetime(df_forecast["ds"])
 
-st.plotly_chart(fig, use_container_width=True)
+    model = Prophet()
+    model.fit(df_forecast)
 
-# ---------- AI ANALYSIS ----------
-st.subheader("AI Analysis")
+    future = model.make_future_dataframe(periods=30)
+    forecast = model.predict(future)
 
-data_summary = f"""
-Total revenue: {total}
-Today revenue: {today}
-Last 30 day trend: {daily['Revenue'].iloc[-1] - daily['Revenue'].iloc[-30]}
-"""
+    st.subheader("Forecast Plot")
+    fig1 = px.line(forecast, x="ds", y="yhat")
+    st.plotly_chart(fig1, use_container_width=True)
 
-if st.button("Generate AI Analysis"):
+    st.subheader("Components")
+    fig2 = model.plot_components(forecast)
+    st.pyplot(fig2)
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are an energy market analyst."},
-            {"role": "user", "content": f"Analyze this BESS portfolio:\n{data_summary}"}
-        ]
+# -------------------------
+# AI INSIGHTS
+# -------------------------
+elif mode == "AI Insights":
+    st.title("🤖 AI Intelligence Engine")
+
+    sample_data = df.head(50).to_csv(index=False)
+
+    prompt = st.text_area(
+        "Ask AI about your data",
+        "Analyze trends, anomalies and business insights."
     )
 
-    st.write(response.choices[0].message.content)
+    if st.button("Run AI Analysis"):
+        with st.spinner("Thinking..."):
 
-# ---------- COPILOT ----------
-st.subheader("Investor Copilot")
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a senior data analyst AI. Provide insights, trends and anomalies."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""
+                        Dataset sample:
+                        {sample_data}
 
-q = st.text_input("Ask anything about the portfolio")
+                        Question:
+                        {prompt}
+                        """
+                    }
+                ]
+            )
 
-if q:
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are an expert in BESS and energy markets."},
-            {"role": "user", "content": q}
-        ]
-    )
+            st.success("Analysis Complete")
+            st.write(response.choices[0].message.content)
 
-    st.write(response.choices[0].message.content)
+# -------------------------
+# FOOTER
+# -------------------------
+st.markdown("---")
+st.caption("Apex Intelligence © 2026")
